@@ -93,8 +93,9 @@ class BlinkEngine:
             valid_indexes.append(idx)
 
         print("🔍 Debug banda ojos:", json.dumps(eye_band_debug))
+        print(f"🔍 eyeBrightness: {eye_brightness}")
 
-        if len(valid_indexes) < 2:
+        if len(valid_indexes) < 3:
             return {
                 "passed": False,
                 "livenessScore": 0.1,
@@ -106,13 +107,25 @@ class BlinkEngine:
                 },
             }
 
-        max_b = max(eye_brightness)
+        # --- métricas globales de brillo ---
         has_positive = any(b > 0 for b in eye_brightness)
-        min_b = (
-            min(b for b in eye_brightness if b > 0) if has_positive else 0.0
-        )
+        if not has_positive:
+            return {
+                "passed": False,
+                "livenessScore": 0.0,
+                "reason": "No se pudo medir brillo en la banda de ojos.",
+                "stats": {
+                    "framesCount": len(frames),
+                    "eyeBrightness": eye_brightness,
+                },
+            }
+
+        positives = [b for b in eye_brightness if b > 0]
+        max_b = max(positives)
+        min_b = min(positives)
         amplitude = max_b - min_b
 
+        # --- diffs entre frames completos (movimiento global) ---
         diffs: List[float] = []
         for i in range(len(frames) - 1):
             d = frame_difference(frames[i], frames[i + 1])
@@ -121,24 +134,64 @@ class BlinkEngine:
         max_diff = max(diffs) if diffs else 0.0
         avg_diff = float(np.mean(diffs)) if diffs else 0.0
 
+        # --- detección de "valle" de parpadeo ---
+        valley_drop = 0.0
+        valley_index = None
+
+        # solo consideramos frames internos, no extremos
+        for i in range(1, len(eye_brightness) - 1):
+            cur = eye_brightness[i]
+            prev = eye_brightness[i - 1]
+            nxt = eye_brightness[i + 1]
+
+            if cur <= 0:
+                continue
+
+            # cuánto más oscuro es el frame actual vs promedio de vecinos
+            local_drop = ((prev + nxt) / 2.0) - cur
+            if local_drop > valley_drop:
+                valley_drop = local_drop
+                valley_index = i
+
         print(
-            f"📊 Blink metrics -> max_b: {max_b:.2f}, min_b: {min_b:.2f}, amplitude: {amplitude:.2f}, "
-            f"max_diff: {max_diff:.4f}, avg_diff: {avg_diff:.4f}"
+            f"📊 Blink metrics -> max_b: {max_b:.2f}, min_b: {min_b:.2f}, "
+            f"amplitude: {amplitude:.2f}, max_diff: {max_diff:.4f}, "
+            f"avg_diff: {avg_diff:.4f}, valley_drop: {valley_drop:.2f}, "
+            f"valley_index: {valley_index}"
         )
 
-        BRIGHTNESS_MIN_AMPLITUDE = 1.5
-        GLOBAL_DIFF_MIN = 0.008
+        # ---- UMBRALES (ajustables) ----
+        # cuánto debe cambiar el brillo total entre frames
+        BRIGHTNESS_MIN_AMPLITUDE = 8.0      # antes era muy sensible
+        # cuánto debe caer el brillo en el frame "oscuro" vs vecinos
+        VALLEY_MIN_DROP = 6.0
+        # movimiento mínimo promedio entre frames (global)
+        GLOBAL_DIFF_MIN = 0.02
 
-        blink_detected = amplitude >= BRIGHTNESS_MIN_AMPLITUDE and max_diff >= GLOBAL_DIFF_MIN
+        blink_detected = (
+            amplitude >= BRIGHTNESS_MIN_AMPLITUDE
+            and valley_drop >= VALLEY_MIN_DROP
+            and max_diff >= GLOBAL_DIFF_MIN
+        )
 
-        score_brightness = min(1.0, amplitude / 10.0)
-        score_motion = min(1.0, max_diff / 0.04)
-        liveness_score = float(round(0.6 * score_brightness + 0.4 * score_motion, 3))
+        # scoring: combinamos amplitud + valley_drop + movimiento
+        score_brightness = min(1.0, amplitude / 40.0)
+        score_valley = min(1.0, valley_drop / 20.0)
+        score_motion = min(1.0, max_diff / 0.15)
+
+        liveness_score = float(
+            round(
+                0.5 * score_brightness
+                + 0.3 * score_valley
+                + 0.2 * score_motion,
+                3,
+            )
+        )
 
         if not blink_detected:
             reason = (
                 "No se detectó un parpadeo claro. Intenta cerrar y abrir los ojos de forma más marcada "
-                "mirando a la cámara."
+                "mirando a la cámara y manteniendo la cabeza relativamente quieta."
             )
         else:
             reason = None
@@ -156,6 +209,8 @@ class BlinkEngine:
                 "brightnessAmplitude": amplitude,
                 "maxFrameDiff": max_diff,
                 "avgFrameDiff": avg_diff,
+                "valleyDrop": valley_drop,
+                "valleyIndex": valley_index,
             },
         }
 
