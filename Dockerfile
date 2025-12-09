@@ -4,11 +4,15 @@ RUN yum update -y && \
     yum install -y gcc gcc-c++ make && \
     yum clean all
 
+WORKDIR ${LAMBDA_TASK_ROOT}
+
 COPY requirements.txt .
 
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-COPY app/ ./app/
+COPY app/main.py ./main.py
+COPY app/engine ./engine
+COPY app/utils ./utils
 
-CMD ["app.main.handler"]
+CMD ["main.handler"]
