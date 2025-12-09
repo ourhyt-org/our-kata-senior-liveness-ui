@@ -5,7 +5,7 @@ import boto3
 import cv2
 import numpy as np
 
-from utils.images import (
+from app.utils.images import (
     to_gray,
     resize,
     frame_difference,

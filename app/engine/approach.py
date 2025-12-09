@@ -4,7 +4,7 @@ import boto3
 import cv2
 import numpy as np
 
-from utils.images import debug_image_info
+from app.utils.images import debug_image_info
 
 s3 = boto3.client("s3")
 
