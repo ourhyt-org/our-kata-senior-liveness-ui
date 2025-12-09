@@ -12,6 +12,4 @@ RUN pip install --upgrade pip && \
 
 COPY app/ ./app/
 
-COPY app.py .
-
 CMD ["app.main.handler"]
