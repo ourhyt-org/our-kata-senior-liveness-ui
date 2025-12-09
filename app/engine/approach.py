@@ -125,7 +125,10 @@ class ApproachEngine:
     def run(self, bucket: str, frame_keys: List[str]) -> Dict[str, Any]:
         frames: List[np.ndarray] = []
 
-        use_keys = frame_keys[:2]
+        if len(frame_keys) >= 2:
+            use_keys = [frame_keys[0], frame_keys[-1]]
+        else:
+            use_keys = frame_keys
 
         for key in use_keys:
             img = self.load_frame_from_s3(bucket, key)
