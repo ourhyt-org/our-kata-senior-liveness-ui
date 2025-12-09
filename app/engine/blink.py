@@ -126,13 +126,13 @@ class BlinkEngine:
             f"max_diff: {max_diff:.4f}, avg_diff: {avg_diff:.4f}"
         )
 
-        BRIGHTNESS_MIN_AMPLITUDE = 18.0
-        GLOBAL_DIFF_MIN = 0.05
+        BRIGHTNESS_MIN_AMPLITUDE = 4.0
+        GLOBAL_DIFF_MIN = 0.015
 
         blink_detected = amplitude >= BRIGHTNESS_MIN_AMPLITUDE and max_diff >= GLOBAL_DIFF_MIN
 
-        score_brightness = min(1.0, amplitude / 40.0)
-        score_motion = min(1.0, max_diff / 0.15)
+        score_brightness = min(1.0, amplitude / 15.0)
+        score_motion = min(1.0, max_diff / 0.06)
         liveness_score = float(round(0.6 * score_brightness + 0.4 * score_motion, 3))
 
         if not blink_detected:
