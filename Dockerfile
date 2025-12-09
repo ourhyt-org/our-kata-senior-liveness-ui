@@ -2,14 +2,11 @@ FROM public.ecr.aws/lambda/python:3.10
 
 WORKDIR /var/task
 
-RUN yum update -y && \
-    yum install -y gcc gcc-c++ make && \
-    yum clean all
-
 COPY requirements.txt .
+
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 COPY app/ ./app/
 
-CMD ["app.main.handler"]
+CMD ["app.lambda_function.handler"]
