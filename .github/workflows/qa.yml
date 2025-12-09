@@ -1,0 +1,111 @@
+name: Deploy KATA Liveness Engine (QA)
+
+on:
+  push:
+    branches:
+      - qa
+    paths:
+      - app/**
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/qa.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+      FUNCTION_NAME: ourhyt-kata-liveness-engine-dev
+      ECR_REPOSITORY: kata-liveness-engine
+      IMAGE_TAG: lambda
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get AWS Account ID
+        id: aws_account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+          echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin ${{ steps.aws_account.outputs.account_id }}.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      - name: Build Docker image
+        run: |
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+
+      - name: Tag image for ECR
+        run: |
+          FULL_IMAGE_URI=${{ steps.aws_account.outputs.account_id }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "FULL_IMAGE_URI=$FULL_IMAGE_URI" >> $GITHUB_ENV
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $FULL_IMAGE_URI
+
+      - name: Push image to ECR
+        run: |
+          docker push $FULL_IMAGE_URI
+
+      - name: Update Lambda to use new image
+        run: |
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --image-uri $FULL_IMAGE_URI
+
+      - name: Wait for Lambda update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name $FUNCTION_NAME
+
+      - name: Publish new version
+        id: publish
+        run: |
+          VERSION=$(aws lambda publish-version \
+            --function-name $FUNCTION_NAME \
+            --query 'Version' --output text)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create alias if missing
+        env:
+          ALIAS_NAME: ourhyt-kata-liveness-engine-dev
+        run: |
+          ALIAS_EXISTS=$(aws lambda list-aliases \
+            --function-name $FUNCTION_NAME \
+            --query "Aliases[?Name=='${ALIAS_NAME}'] | length(@)" \
+            --output text)
+          
+          if [ "$ALIAS_EXISTS" = "0" ]; then
+            echo "Alias not found — creating…"
+            aws lambda create-alias \
+              --function-name $FUNCTION_NAME \
+              --name $ALIAS_NAME \
+              --function-version ${{ steps.publish.outputs.version }}
+          else
+            echo "Alias exists — updating…"
+          fi
+
+      - name: Update alias to new version
+        env:
+          ALIAS_NAME: ourhyt-kata-liveness-engine-dev
+        run: |
+          aws lambda update-alias \
+            --function-name $FUNCTION_NAME \
+            --name $ALIAS_NAME \
+            --function-version ${{ steps.publish.outputs.version }}
+
+      - name: Deployment OK
+        run: echo "🚀 KATA Liveness Engine deployed successfully!"
