@@ -95,10 +95,10 @@ class ApproachEngine:
 
         scale_change = area2 / area1
 
-        THRESHOLD_SCALE = 1.15
+        THRESHOLD_SCALE = 1.10
         passed = scale_change > THRESHOLD_SCALE
 
-        raw_score = (scale_change - 1.0) / 0.8
+        raw_score = (scale_change - 1.0) / 0.3
         liveness_score = max(0.0, min(1.0, round(raw_score, 3)))
 
         reason = None
