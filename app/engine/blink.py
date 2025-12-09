@@ -160,24 +160,17 @@ class BlinkEngine:
             f"valley_index: {valley_index}"
         )
 
-        # ---- UMBRALES (ajustables) ----
-        # cuánto debe cambiar el brillo total entre frames
-        BRIGHTNESS_MIN_AMPLITUDE = 8.0      # antes era muy sensible
-        # cuánto debe caer el brillo en el frame "oscuro" vs vecinos
-        VALLEY_MIN_DROP = 6.0
-        # movimiento mínimo promedio entre frames (global)
-        GLOBAL_DIFF_MIN = 0.02
+        BRIGHTNESS_MIN_AMPLITUDE = 3.0
+        VALLEY_DROP_MIN = 0.25
 
         blink_detected = (
             amplitude >= BRIGHTNESS_MIN_AMPLITUDE
-            and valley_drop >= VALLEY_MIN_DROP
-            and max_diff >= GLOBAL_DIFF_MIN
+            and valley_drop >= VALLEY_DROP_MIN
         )
 
-        # scoring: combinamos amplitud + valley_drop + movimiento
         score_brightness = min(1.0, amplitude / 40.0)
         score_valley = min(1.0, valley_drop / 20.0)
-        score_motion = min(1.0, max_diff / 0.15)
+        score_motion = min(1.0, max_diff / 0.06)
 
         liveness_score = float(
             round(
