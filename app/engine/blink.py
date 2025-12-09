@@ -5,21 +5,24 @@ import boto3
 import cv2
 import numpy as np
 
-from utils.images import to_gray, resize, frame_difference, debug_image_info
+from utils.images import (
+    to_gray,
+    resize,
+    frame_difference,
+    debug_image_info,
+)
 
 s3 = boto3.client("s3")
 
 
 class BlinkEngine:
-
-    def __init__(self):
+    def __init__(self) -> None:
         self.face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
         self.eye_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_eye_tree_eyeglasses.xml"
         )
-
 
     def load_frame_from_s3(self, bucket: str, key: str):
         try:
@@ -32,9 +35,8 @@ class BlinkEngine:
             print(f"❌ Error cargando frame s3://{bucket}/{key}: {e}")
             return None
 
-
     def extract_eye_band(self, img) -> Tuple[np.ndarray | None, Dict[str, Any]]:
-        info = {"face_found": False, "eyes_band_shape": None}
+        info: Dict[str, Any] = {"face_found": False, "eyes_band_shape": None}
 
         gray = to_gray(img)
         if gray is None:
@@ -46,7 +48,7 @@ class BlinkEngine:
             small,
             scaleFactor=1.2,
             minNeighbors=5,
-            minSize=(80, 80)
+            minSize=(80, 80),
         )
 
         if len(faces) == 0:
@@ -59,11 +61,10 @@ class BlinkEngine:
         y2 = int(y + 0.5 * h)
         y2 = min(y2, small.shape[0])
 
-        eye_band = small[y1:y2, x:x + w]
+        eye_band = small[y1:y2, x : x + w]
         info["eyes_band_shape"] = eye_band.shape if eye_band is not None else None
 
         return eye_band, info
-
 
     def analyze_blink(self, frames: List[np.ndarray]) -> Dict[str, Any]:
         if len(frames) < 3:
@@ -71,7 +72,7 @@ class BlinkEngine:
                 "passed": False,
                 "livenessScore": 0.0,
                 "reason": "Muy pocos frames para analizar parpadeo (mínimo 3).",
-                "stats": {"framesCount": len(frames)}
+                "stats": {"framesCount": len(frames)},
             }
 
         eye_brightness: List[float] = []
@@ -106,15 +107,17 @@ class BlinkEngine:
             }
 
         max_b = max(eye_brightness)
-        min_b = min(b for b in eye_brightness if b > 0) if any(
-            b > 0 for b in eye_brightness
-        ) else 0.0
+        has_positive = any(b > 0 for b in eye_brightness)
+        min_b = (
+            min(b for b in eye_brightness if b > 0) if has_positive else 0.0
+        )
         amplitude = max_b - min_b
 
-        diffs = []
+        diffs: List[float] = []
         for i in range(len(frames) - 1):
             d = frame_difference(frames[i], frames[i + 1])
             diffs.append(d)
+
         max_diff = max(diffs) if diffs else 0.0
         avg_diff = float(np.mean(diffs)) if diffs else 0.0
 
@@ -163,7 +166,9 @@ class BlinkEngine:
             img = self.load_frame_from_s3(bucket, key)
             if img is None:
                 continue
-            print(f"✅ Frame cargado: s3://{bucket}/{key}, info={debug_image_info(img)}")
+            print(
+                f"✅ Frame cargado: s3://{bucket}/{key}, info={debug_image_info(img)}"
+            )
             frames.append(img)
 
         if not frames:

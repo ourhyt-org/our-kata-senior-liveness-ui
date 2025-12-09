@@ -9,7 +9,7 @@ def to_gray(img):
         return None
 
 
-def resize(img, width=None, height=None):
+def resize(img, width: int | None = None, height: int | None = None):
     if width is None and height is None:
         return img
 
@@ -25,7 +25,7 @@ def resize(img, width=None, height=None):
     return cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
 
 
-def frame_difference(img1, img2):
+def frame_difference(img1, img2) -> float:
     gray1 = to_gray(img1)
     gray2 = to_gray(img2)
 
@@ -40,7 +40,7 @@ def frame_difference(img1, img2):
     return round(score, 4)
 
 
-def center_crop(img, size=256):
+def center_crop(img, size: int = 256):
     h, w = img.shape[:2]
     cx, cy = w // 2, h // 2
 
@@ -52,10 +52,10 @@ def center_crop(img, size=256):
     return img[y1:y2, x1:x2]
 
 
-def brightness(img):
+def brightness(img) -> float:
     gray = to_gray(img)
     if gray is None:
-        return 0
+        return 0.0
     return float(np.mean(gray))
 
 
@@ -68,5 +68,13 @@ def debug_image_info(img):
         "valid": True,
         "width": w,
         "height": h,
-        "brightness": brightness(img)
+        "brightness": brightness(img),
     }
+
+
+def normalize_score(value: float) -> float:
+    if value < 0:
+        return 0.0
+    if value > 1:
+        return 1.0
+    return round(value, 3)
