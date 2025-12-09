@@ -168,18 +168,16 @@ class BlinkEngine:
             and valley_drop >= VALLEY_DROP_MIN
         )
 
-        score_brightness = min(1.0, amplitude / 40.0)
-        score_valley = min(1.0, valley_drop / 20.0)
-        score_motion = min(1.0, max_diff / 0.06)
+        score_brightness = min(1.0, amplitude / 15.0)      # 4.0 -> ~0.26
+        score_valley = min(1.0, valley_drop / 0.7)         # 0.62 -> ~0.89
+        score_motion = min(1.0, max_diff / 0.03)           # 0.0066 -> ~0.22
 
-        liveness_score = float(
-            round(
-                0.5 * score_brightness
-                + 0.3 * score_valley
-                + 0.2 * score_motion,
-                3,
-            )
-        )
+        liveness_score = float(round(
+            0.7 * score_brightness +
+            0.2 * score_valley +
+            0.1 * score_motion,
+            3
+        ))
 
         if not blink_detected:
             reason = (
