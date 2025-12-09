@@ -95,7 +95,7 @@ class ApproachEngine:
 
         scale_change = area2 / area1
 
-        THRESHOLD_SCALE = 1.10
+        THRESHOLD_SCALE = 1.07
         passed = scale_change > THRESHOLD_SCALE
 
         raw_score = (scale_change - 1.0) / 0.3
