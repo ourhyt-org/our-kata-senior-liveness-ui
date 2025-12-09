@@ -1,9 +1,9 @@
-# app/handler.py
+# main.py
 import json
 from typing import Any, Dict, List, Optional
 
-from app.engine.blink import BlinkEngine
-from app.engine.approach import ApproachEngine
+from engine.blink import BlinkEngine
+from engine.approach import ApproachEngine
 
 blink_engine = BlinkEngine()
 approach_engine = ApproachEngine()
