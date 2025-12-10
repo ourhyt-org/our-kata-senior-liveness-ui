@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from app.engine.blink import BlinkEngine
 from app.engine.approach import ApproachEngine
+from app.engine.face_match import compare_face_reference
 
 blink_engine = BlinkEngine()
 approach_engine = ApproachEngine()
@@ -16,6 +17,7 @@ def handler(event, context):
     challenge_type: Optional[str] = event.get("challengeType")
     bucket: Optional[str] = event.get("bucket")
     frame_keys: List[str] = event.get("frameKeys", []) or []
+    doc_number: Optional[str] = event.get("docNumber")
 
     if not bucket or not frame_keys:
         body = {
@@ -69,6 +71,28 @@ def handler(event, context):
             "statusCode": 200,
             "body": json.dumps(response),
         }
+    
+    face_match_info: Dict[str, Any] = {
+        "enabled": False,
+        "match": None,
+        "similarity": None,
+        "error": None,
+    }
+
+    if doc_number:
+        reference_key = f"idcard/{doc_number}.jpg"
+        live_key = frame_keys[len(frame_keys) // 2]
+
+        print(
+            f"🔍 FaceMatch: reference=s3://{bucket}/{reference_key}, "
+            f"live=s3://{bucket}/{live_key}"
+        )
+
+        face_match_info = compare_face_reference(
+            bucket=bucket,
+            reference_key=reference_key,
+            live_key=live_key,
+        )
 
     response: Dict[str, Any] = {
         "authId": auth_id,
@@ -80,6 +104,12 @@ def handler(event, context):
         "reason": result.get("reason"),
         "engine": engine_name,
         "stats": result.get("stats", {}),
+        "faceMatch": face_match_info.get("match"),
+        "faceSimilarity": face_match_info.get("similarity"),
+        "faceMatchInfo": {
+            "enabled": face_match_info.get("enabled"),
+            "error": face_match_info.get("error"),
+        },
     }
 
     print("📤 Respuesta liveness-engine:", json.dumps(response))
