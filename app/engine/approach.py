@@ -4,8 +4,6 @@ import boto3
 import cv2
 import numpy as np
 
-from app.utils.images import debug_image_info
-
 s3 = boto3.client("s3")
 
 
@@ -15,26 +13,16 @@ class ApproachEngine:
     
     Detects if the user moved closer to the camera by comparing face size
     between the first and last frames of a sequence.
-    
-    A successful approach shows:
-    - Face detected in both frames
-    - Face area increases significantly (user got closer)
     """
     
-    # === DETECTION THRESHOLDS ===
-    
-    # Minimum scale change to pass (1.07 = 7% larger)
     THRESHOLD_SCALE = 1.07
-    
-    # Face detection parameters - more permissive for various face sizes
-    MIN_FACE_SIZE_SMALL = (60, 60)    # For distant faces
-    MIN_FACE_SIZE_LARGE = (150, 150)  # For close faces
+    MIN_FACE_SIZE_SMALL = (60, 60)
+    MIN_FACE_SIZE_LARGE = (150, 150)
     
     def __init__(self) -> None:
         self.face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
-        # Alternative cascade for profile/rotated faces
         self.face_cascade_alt = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml"
         )
@@ -47,18 +35,13 @@ class ApproachEngine:
             img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             return img
         except Exception as e:
-            print(f"❌ Error cargando frame s3://{bucket}/{key}: {e}")
+            print(f"❌ S3 error: {key} - {e}")
             return None
 
     def _detect_face_robust(
         self, gray: np.ndarray, frame_label: str = ""
     ) -> Tuple[Optional[Tuple[int, int, int, int]], Dict[str, Any]]:
-        """
-        Robust face detection with multiple strategies.
-        
-        Tries different parameters and cascades to maximize detection rate.
-        Returns the largest face found and debug info.
-        """
+        """Robust face detection with multiple strategies."""
         debug_info = {
             "frame_label": frame_label,
             "image_shape": gray.shape,
@@ -68,46 +51,37 @@ class ApproachEngine:
         
         all_faces = []
         
-        # === Strategy 1: Default parameters, small minSize (for distant faces) ===
+        # Strategy 1: Default parameters, small minSize
         faces = self.face_cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
             minNeighbors=3,
             minSize=self.MIN_FACE_SIZE_SMALL,
         )
-        debug_info["strategies_tried"].append({
-            "name": "default_small",
-            "found": len(faces),
-        })
+        debug_info["strategies_tried"].append({"name": "default_small", "found": len(faces)})
         all_faces.extend(faces)
         
-        # === Strategy 2: More permissive parameters (for close/large faces) ===
+        # Strategy 2: More permissive parameters
         faces = self.face_cascade.detectMultiScale(
             gray,
-            scaleFactor=1.05,  # Finer scale steps
-            minNeighbors=2,    # More permissive
+            scaleFactor=1.05,
+            minNeighbors=2,
             minSize=self.MIN_FACE_SIZE_LARGE,
         )
-        debug_info["strategies_tried"].append({
-            "name": "permissive_large",
-            "found": len(faces),
-        })
+        debug_info["strategies_tried"].append({"name": "permissive_large", "found": len(faces)})
         all_faces.extend(faces)
         
-        # === Strategy 3: Alternative cascade (better for some angles) ===
+        # Strategy 3: Alternative cascade
         faces = self.face_cascade_alt.detectMultiScale(
             gray,
             scaleFactor=1.1,
             minNeighbors=3,
             minSize=self.MIN_FACE_SIZE_SMALL,
         )
-        debug_info["strategies_tried"].append({
-            "name": "alt_cascade",
-            "found": len(faces),
-        })
+        debug_info["strategies_tried"].append({"name": "alt_cascade", "found": len(faces)})
         all_faces.extend(faces)
         
-        # === Strategy 4: Downscaled image (helps with very large faces) ===
+        # Strategy 4: Downscaled image
         h, w = gray.shape[:2]
         if w > 800:
             scale = 640 / w
@@ -118,15 +92,11 @@ class ApproachEngine:
                 minNeighbors=3,
                 minSize=(40, 40),
             )
-            # Scale back to original coordinates
             faces_scaled = [
                 (int(x/scale), int(y/scale), int(w_/scale), int(h_/scale))
                 for (x, y, w_, h_) in faces_small
             ]
-            debug_info["strategies_tried"].append({
-                "name": "downscaled",
-                "found": len(faces_scaled),
-            })
+            debug_info["strategies_tried"].append({"name": "downscaled", "found": len(faces_scaled)})
             all_faces.extend(faces_scaled)
         
         debug_info["faces_found"] = len(all_faces)
@@ -134,7 +104,6 @@ class ApproachEngine:
         if len(all_faces) == 0:
             return None, debug_info
         
-        # Return the largest face (most likely to be the main subject)
         largest_face = max(all_faces, key=lambda f: f[2] * f[3])
         debug_info["selected_face"] = {
             "x": int(largest_face[0]),
@@ -147,9 +116,7 @@ class ApproachEngine:
         return tuple(largest_face), debug_info
 
     def _evaluate_approach(self, frames: List[np.ndarray]) -> Dict[str, Any]:
-        """
-        Evaluate approach by comparing face size between first and last frame.
-        """
+        """Evaluate approach by comparing face size between first and last frame."""
         if len(frames) < 2:
             return {
                 "livenessScore": 0.0,
@@ -172,23 +139,17 @@ class ApproachEngine:
                 "stats": {"framesCount": len(frames)},
             }
 
-        # Detect faces with robust multi-strategy approach
         face1, debug1 = self._detect_face_robust(gray1, "first_frame")
         face2, debug2 = self._detect_face_robust(gray2, "last_frame")
-        
-        print(f"🔍 Face detection (first): {debug1}")
-        print(f"🔍 Face detection (last): {debug2}")
 
         if face1 is None or face2 is None:
             # Try with intermediate frames if last frame failed
             if face2 is None and len(frames) > 2:
-                print("⚠️ Trying intermediate frames as fallback...")
                 for i in range(len(frames) - 2, 0, -1):
                     try:
                         gray_mid = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
                         face2, debug2 = self._detect_face_robust(gray_mid, f"frame_{i}")
                         if face2 is not None:
-                            print(f"✅ Found face in frame {i}")
                             break
                     except Exception:
                         continue
@@ -226,17 +187,8 @@ class ApproachEngine:
             }
 
         scale_change = area2 / area1
-        
-        print(
-            f"📊 Approach metrics -> area1: {area1:.0f}, area2: {area2:.0f}, "
-            f"scale_change: {scale_change:.3f}, threshold: {self.THRESHOLD_SCALE}"
-        )
-
         passed = scale_change > self.THRESHOLD_SCALE
 
-        # Score calculation: 0-1 based on how much they approached
-        # scale_change of 1.0 = no change = 0 score
-        # scale_change of 1.3+ = significant approach = 1.0 score
         raw_score = (scale_change - 1.0) / 0.3
         liveness_score = max(0.0, min(1.0, round(raw_score, 3)))
 
@@ -271,12 +223,7 @@ class ApproachEngine:
         }
 
     def run(self, bucket: str, frame_keys: List[str]) -> Dict[str, Any]:
-        """
-        Load frames from S3 and evaluate approach.
-        
-        For efficiency, only loads first, last, and a few intermediate frames
-        (in case the last frame fails detection).
-        """
+        """Load frames from S3 and evaluate approach."""
         if len(frame_keys) < 2:
             return {
                 "livenessScore": 0.0,
@@ -285,18 +232,13 @@ class ApproachEngine:
                 "stats": {"framesCount": len(frame_keys)},
             }
         
-        # Load first, last, and 2 intermediate frames as fallback
-        # This gives us options if face detection fails on the last frame
-        indices_to_load = [0]  # First frame
+        indices_to_load = [0]
         
-        # Add 2 intermediate frames (around 60% and 80% of sequence)
         if len(frame_keys) > 4:
             indices_to_load.append(int(len(frame_keys) * 0.6))
             indices_to_load.append(int(len(frame_keys) * 0.8))
         
-        indices_to_load.append(len(frame_keys) - 1)  # Last frame
-        
-        # Remove duplicates and sort
+        indices_to_load.append(len(frame_keys) - 1)
         indices_to_load = sorted(set(indices_to_load))
         
         frames: List[np.ndarray] = []
@@ -304,14 +246,8 @@ class ApproachEngine:
         for idx in indices_to_load:
             key = frame_keys[idx]
             img = self.load_frame_from_s3(bucket, key)
-            if img is None:
-                print(f"⚠️ Failed to load frame {idx}: {key}")
-                continue
-            print(
-                f"✅ Frame cargado (APPROACH): s3://{bucket}/{key}, "
-                f"idx={idx}, info={debug_image_info(img)}"
-            )
-            frames.append(img)
+            if img is not None:
+                frames.append(img)
 
         if len(frames) < 2:
             return {
