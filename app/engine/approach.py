@@ -8,12 +8,6 @@ s3 = boto3.client("s3")
 
 
 class ApproachEngine:
-    """
-    Approach detection engine for liveness verification.
-    
-    Detects if the user moved closer to the camera by comparing face size
-    between the first and last frames of a sequence.
-    """
     
     THRESHOLD_SCALE = 1.07
     MIN_FACE_SIZE_SMALL = (60, 60)
@@ -41,7 +35,6 @@ class ApproachEngine:
     def _detect_face_robust(
         self, gray: np.ndarray, frame_label: str = ""
     ) -> Tuple[Optional[Tuple[int, int, int, int]], Dict[str, Any]]:
-        """Robust face detection with multiple strategies."""
         debug_info = {
             "frame_label": frame_label,
             "image_shape": gray.shape,
@@ -51,7 +44,6 @@ class ApproachEngine:
         
         all_faces = []
         
-        # Strategy 1: Default parameters, small minSize
         faces = self.face_cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
@@ -61,7 +53,6 @@ class ApproachEngine:
         debug_info["strategies_tried"].append({"name": "default_small", "found": len(faces)})
         all_faces.extend(faces)
         
-        # Strategy 2: More permissive parameters
         faces = self.face_cascade.detectMultiScale(
             gray,
             scaleFactor=1.05,
@@ -71,7 +62,6 @@ class ApproachEngine:
         debug_info["strategies_tried"].append({"name": "permissive_large", "found": len(faces)})
         all_faces.extend(faces)
         
-        # Strategy 3: Alternative cascade
         faces = self.face_cascade_alt.detectMultiScale(
             gray,
             scaleFactor=1.1,
@@ -81,7 +71,6 @@ class ApproachEngine:
         debug_info["strategies_tried"].append({"name": "alt_cascade", "found": len(faces)})
         all_faces.extend(faces)
         
-        # Strategy 4: Downscaled image
         h, w = gray.shape[:2]
         if w > 800:
             scale = 640 / w
@@ -116,7 +105,6 @@ class ApproachEngine:
         return tuple(largest_face), debug_info
 
     def _evaluate_approach(self, frames: List[np.ndarray]) -> Dict[str, Any]:
-        """Evaluate approach by comparing face size between first and last frame."""
         if len(frames) < 2:
             return {
                 "livenessScore": 0.0,
@@ -143,7 +131,6 @@ class ApproachEngine:
         face2, debug2 = self._detect_face_robust(gray2, "last_frame")
 
         if face1 is None or face2 is None:
-            # Try with intermediate frames if last frame failed
             if face2 is None and len(frames) > 2:
                 for i in range(len(frames) - 2, 0, -1):
                     try:
@@ -223,7 +210,6 @@ class ApproachEngine:
         }
 
     def run(self, bucket: str, frame_keys: List[str]) -> Dict[str, Any]:
-        """Load frames from S3 and evaluate approach."""
         if len(frame_keys) < 2:
             return {
                 "livenessScore": 0.0,

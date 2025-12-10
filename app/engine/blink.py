@@ -14,16 +14,7 @@ s3 = boto3.client("s3")
 
 
 class BlinkEngine:
-    """
-    Blink detection engine using eye-band brightness analysis.
-    
-    A real blink has a characteristic temporal pattern:
-    1. BASELINE: Eyes open, relatively stable brightness
-    2. VALLEY: Eyes closed, noticeable brightness DROP (darker due to eyelids covering eyes)
-    3. RECOVERY: Eyes open again, brightness returns to baseline
-    """
 
-    # === DETECTION THRESHOLDS ===
     MIN_DROP_FROM_BASELINE = 2.5
     MIN_LOCAL_VALLEY_DROP = 1.5
     MAX_RECOVERY_DEVIATION_PCT = 0.08
@@ -53,7 +44,6 @@ class BlinkEngine:
             return None
 
     def extract_eye_band(self, img: np.ndarray) -> Tuple[Optional[np.ndarray], Dict[str, Any]]:
-        """Extract the horizontal band containing the eyes from a face image."""
         info: Dict[str, Any] = {"face_found": False, "eyes_band_shape": None}
 
         gray = to_gray(img)
@@ -86,7 +76,6 @@ class BlinkEngine:
         return eye_band, info
 
     def _find_baseline_and_valley(self, brightness: List[float]) -> Dict[str, Any]:
-        """Analyze brightness series to find baseline and valley."""
         n = len(brightness)
         
         valid_values = [b for b in brightness if b > 0]
@@ -194,7 +183,6 @@ class BlinkEngine:
     def _get_valid_neighbor(
         self, brightness: List[float], idx: int, direction: int
     ) -> Optional[float]:
-        """Get the nearest valid (non-zero) neighbor in the given direction."""
         n = len(brightness)
         i = idx + direction
         while 0 <= i < n:
@@ -206,7 +194,6 @@ class BlinkEngine:
     def _compute_liveness_score(
         self, analysis: Dict[str, Any], frame_diffs: List[float]
     ) -> float:
-        """Compute a liveness score based on blink analysis results."""
         if not analysis["is_valid_blink"]:
             drop = analysis.get("drop_from_baseline", 0)
             return min(0.3, drop / 10.0)
@@ -240,7 +227,6 @@ class BlinkEngine:
         return round(final_score, 3)
 
     def analyze_blink(self, frames: List[np.ndarray]) -> Dict[str, Any]:
-        """Analyze a sequence of frames to detect a blink."""
         if len(frames) < self.MIN_FRAMES:
             return {
                 "passed": False,
@@ -343,7 +329,6 @@ class BlinkEngine:
         }
 
     def run(self, bucket: str, frame_keys: List[str]) -> Dict[str, Any]:
-        """Load frames from S3 and run blink analysis."""
         frames: List[np.ndarray] = []
 
         for key in frame_keys:

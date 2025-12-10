@@ -1,4 +1,4 @@
-# app/main.py
+
 import json
 from typing import Any, Dict, List, Optional
 
@@ -11,7 +11,6 @@ approach_engine = ApproachEngine()
 
 
 def _truncate_log(data: Dict[str, Any], max_items: int = 3) -> Dict[str, Any]:
-    """Truncate large lists in log data for cleaner output."""
     result = {}
     for k, v in data.items():
         if isinstance(v, list) and len(v) > max_items:
@@ -30,7 +29,6 @@ def handler(event, context):
     frame_keys: List[str] = event.get("frameKeys", []) or []
     doc_number: Optional[str] = event.get("docNumber")
 
-    # Log entrada (truncado)
     log_event = _truncate_log({
         "authId": auth_id,
         "challengeType": challenge_type,
@@ -120,7 +118,6 @@ def handler(event, context):
         },
     }
 
-    # Log respuesta (solo campos clave)
     print(
         f"📤 OUT: passed={response['passed']}, "
         f"score={response['livenessScore']:.2f}, "
