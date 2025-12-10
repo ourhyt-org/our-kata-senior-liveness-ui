@@ -152,6 +152,10 @@ class TestHandlerResponse:
         assert "reason" in body
         assert "engine" in body
         assert "stats" in body
+        # Face match fields
+        assert "faceMatch" in body
+        assert "faceSimilarity" in body
+        assert "faceMatchInfo" in body
 
     def test_preserves_auth_id(self, mock_lambda_context):
         """Should preserve authId in response."""
@@ -206,6 +210,194 @@ class TestHandlerResponse:
         assert isinstance(body["passed"], bool)
 
 
+class TestHandlerFaceMatch:
+    """Tests for face matching integration in handler."""
+
+    def test_face_match_disabled_when_no_doc_number(self, mock_lambda_context):
+        """Should not run face match when docNumber is not provided."""
+        event = {
+            "authId": "test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["frame1.jpg", "frame2.jpg", "frame3.jpg"],
+            # No docNumber
+        }
+        
+        with patch('app.main.blink_engine') as mock_engine:
+            mock_engine.run.return_value = {
+                "passed": True,
+                "livenessScore": 0.8,
+                "reason": None,
+                "stats": {},
+            }
+            
+            result = handler(event, mock_lambda_context)
+            body = json.loads(result["body"])
+        
+        assert body["faceMatch"] is None
+        assert body["faceSimilarity"] is None
+        assert body["faceMatchInfo"]["enabled"] is False
+
+    def test_face_match_enabled_when_doc_number_provided(self, mock_lambda_context):
+        """Should run face match when docNumber is provided."""
+        event = {
+            "authId": "test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["frame1.jpg", "frame2.jpg", "frame3.jpg"],
+            "docNumber": "1234567890",
+        }
+        
+        with patch('app.main.blink_engine') as mock_engine, \
+             patch('app.main.compare_face_reference') as mock_face_match:
+            mock_engine.run.return_value = {
+                "passed": True,
+                "livenessScore": 0.8,
+                "reason": None,
+                "stats": {},
+            }
+            mock_face_match.return_value = {
+                "enabled": True,
+                "match": True,
+                "similarity": 95.5,
+                "error": None,
+            }
+            
+            result = handler(event, mock_lambda_context)
+            body = json.loads(result["body"])
+        
+        assert body["faceMatch"] is True
+        assert body["faceSimilarity"] == 95.5
+        assert body["faceMatchInfo"]["enabled"] is True
+        assert body["faceMatchInfo"]["error"] is None
+
+    def test_face_match_uses_correct_reference_key(self, mock_lambda_context):
+        """Should use correct S3 key for reference image based on docNumber."""
+        event = {
+            "authId": "test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["frame1.jpg", "frame2.jpg", "frame3.jpg"],
+            "docNumber": "9876543210",
+        }
+        
+        with patch('app.main.blink_engine') as mock_engine, \
+             patch('app.main.compare_face_reference') as mock_face_match:
+            mock_engine.run.return_value = {
+                "passed": True,
+                "livenessScore": 0.8,
+                "reason": None,
+                "stats": {},
+            }
+            mock_face_match.return_value = {
+                "enabled": True,
+                "match": True,
+                "similarity": 90.0,
+                "error": None,
+            }
+            
+            handler(event, mock_lambda_context)
+            
+            # Verify correct reference key was used
+            call_args = mock_face_match.call_args
+            assert call_args.kwargs["reference_key"] == "idcard/9876543210.jpg"
+
+    def test_face_match_uses_middle_frame_as_live(self, mock_lambda_context):
+        """Should use middle frame as live image for comparison."""
+        event = {
+            "authId": "test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["f1.jpg", "f2.jpg", "f3.jpg", "f4.jpg", "f5.jpg"],
+            "docNumber": "123",
+        }
+        
+        with patch('app.main.blink_engine') as mock_engine, \
+             patch('app.main.compare_face_reference') as mock_face_match:
+            mock_engine.run.return_value = {
+                "passed": True,
+                "livenessScore": 0.8,
+                "reason": None,
+                "stats": {},
+            }
+            mock_face_match.return_value = {
+                "enabled": True,
+                "match": True,
+                "similarity": 90.0,
+                "error": None,
+            }
+            
+            handler(event, mock_lambda_context)
+            
+            # Middle frame of 5 frames (index 2) should be f3.jpg
+            call_args = mock_face_match.call_args
+            assert call_args.kwargs["live_key"] == "f3.jpg"
+
+    def test_face_match_no_match_scenario(self, mock_lambda_context):
+        """Should handle face match returning no match."""
+        event = {
+            "authId": "test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["frame1.jpg", "frame2.jpg", "frame3.jpg"],
+            "docNumber": "1234567890",
+        }
+        
+        with patch('app.main.blink_engine') as mock_engine, \
+             patch('app.main.compare_face_reference') as mock_face_match:
+            mock_engine.run.return_value = {
+                "passed": True,
+                "livenessScore": 0.8,
+                "reason": None,
+                "stats": {},
+            }
+            mock_face_match.return_value = {
+                "enabled": True,
+                "match": False,
+                "similarity": 45.0,
+                "error": None,
+            }
+            
+            result = handler(event, mock_lambda_context)
+            body = json.loads(result["body"])
+        
+        assert body["faceMatch"] is False
+        assert body["faceSimilarity"] == 45.0
+
+    def test_face_match_error_scenario(self, mock_lambda_context):
+        """Should handle face match API errors gracefully."""
+        event = {
+            "authId": "test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["frame1.jpg", "frame2.jpg", "frame3.jpg"],
+            "docNumber": "1234567890",
+        }
+        
+        with patch('app.main.blink_engine') as mock_engine, \
+             patch('app.main.compare_face_reference') as mock_face_match:
+            mock_engine.run.return_value = {
+                "passed": True,
+                "livenessScore": 0.8,
+                "reason": None,
+                "stats": {},
+            }
+            mock_face_match.return_value = {
+                "enabled": True,
+                "match": None,
+                "similarity": None,
+                "error": "InvalidS3ObjectException: Image not found",
+            }
+            
+            result = handler(event, mock_lambda_context)
+            body = json.loads(result["body"])
+        
+        assert body["faceMatch"] is None
+        assert body["faceSimilarity"] is None
+        assert body["faceMatchInfo"]["enabled"] is True
+        assert "InvalidS3ObjectException" in body["faceMatchInfo"]["error"]
+
+
 class TestHandlerIntegration:
     """Integration tests using real engine classes (mocked S3)."""
 
@@ -247,3 +439,30 @@ class TestHandlerIntegration:
         assert body["passed"] is False
         assert body["engine"] == "approach-v1"
 
+    def test_full_flow_with_face_match(self, mock_lambda_context):
+        """Test full flow including face match."""
+        from app.engine.blink import BlinkEngine
+        
+        event = {
+            "authId": "integration-test",
+            "challengeType": "BLINK",
+            "bucket": "test-bucket",
+            "frameKeys": ["f1.jpg", "f2.jpg", "f3.jpg", "f4.jpg", "f5.jpg"],
+            "docNumber": "123456789",
+        }
+        
+        with patch.object(BlinkEngine, 'load_frame_from_s3', return_value=None), \
+             patch('app.main.compare_face_reference') as mock_face_match:
+            mock_face_match.return_value = {
+                "enabled": True,
+                "match": True,
+                "similarity": 92.0,
+                "error": None,
+            }
+            
+            result = handler(event, mock_lambda_context)
+        
+        body = json.loads(result["body"])
+        assert body["engine"] == "blink-v1"
+        assert body["faceMatch"] is True
+        assert body["faceSimilarity"] == 92.0
