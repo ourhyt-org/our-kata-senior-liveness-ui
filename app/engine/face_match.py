@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import boto3
 
@@ -22,7 +22,7 @@ def compare_face_reference(
             SimilarityThreshold=similarity_threshold,
         )
     except Exception as e:
-        print(f"⚠️ Error Rekognition.CompareFaces: {e}")
+        print(f"❌ Rekognition error: {e}")
         return {
             "enabled": True,
             "match": None,

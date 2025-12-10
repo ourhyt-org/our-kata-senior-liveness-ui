@@ -1,4 +1,4 @@
-# app/main.py
+
 import json
 from typing import Any, Dict, List, Optional
 
@@ -10,14 +10,33 @@ blink_engine = BlinkEngine()
 approach_engine = ApproachEngine()
 
 
-def handler(event, context):
-    print("📥 Event recibido en liveness-engine:", json.dumps(event))
+def _truncate_log(data: Dict[str, Any], max_items: int = 3) -> Dict[str, Any]:
+    result = {}
+    for k, v in data.items():
+        if isinstance(v, list) and len(v) > max_items:
+            result[k] = v[:max_items] + [f"... +{len(v) - max_items} more"]
+        elif isinstance(v, dict):
+            result[k] = _truncate_log(v, max_items)
+        else:
+            result[k] = v
+    return result
 
+
+def handler(event, context):
     auth_id: Optional[str] = event.get("authId")
     challenge_type: Optional[str] = event.get("challengeType")
     bucket: Optional[str] = event.get("bucket")
     frame_keys: List[str] = event.get("frameKeys", []) or []
     doc_number: Optional[str] = event.get("docNumber")
+
+    log_event = _truncate_log({
+        "authId": auth_id,
+        "challengeType": challenge_type,
+        "bucket": bucket,
+        "frameKeys": frame_keys,
+        "docNumber": doc_number,
+    })
+    print(f"📥 IN: {json.dumps(log_event)}")
 
     if not bucket or not frame_keys:
         body = {
@@ -28,10 +47,8 @@ def handler(event, context):
             "reason": "Faltan parámetros: 'bucket' o 'frameKeys'.",
             "engine": "liveness-engine",
         }
-        return {
-            "statusCode": 400,
-            "body": json.dumps(body),
-        }
+        print(f"📤 OUT: passed=False, reason=missing_params")
+        return {"statusCode": 400, "body": json.dumps(body)}
 
     if not challenge_type:
         body = {
@@ -42,10 +59,8 @@ def handler(event, context):
             "reason": "Falta 'challengeType' en el evento.",
             "engine": "liveness-engine",
         }
-        return {
-            "statusCode": 400,
-            "body": json.dumps(body),
-        }
+        print(f"📤 OUT: passed=False, reason=missing_challenge_type")
+        return {"statusCode": 400, "body": json.dumps(body)}
 
     challenge_type = challenge_type.upper()
 
@@ -56,6 +71,7 @@ def handler(event, context):
         result = approach_engine.run(bucket=bucket, frame_keys=frame_keys)
         engine_name = "approach-v1"
     else:
+        print(f"📤 OUT: passed=False, reason=unsupported_challenge")
         response = {
             "authId": auth_id,
             "challengeType": challenge_type,
@@ -66,11 +82,7 @@ def handler(event, context):
             "reason": f"challengeType no soportado: {challenge_type}",
             "engine": "unsupported",
         }
-        print("📤 Respuesta liveness-engine (unsupported):", json.dumps(response))
-        return {
-            "statusCode": 200,
-            "body": json.dumps(response),
-        }
+        return {"statusCode": 200, "body": json.dumps(response)}
     
     face_match_info: Dict[str, Any] = {
         "enabled": False,
@@ -82,12 +94,6 @@ def handler(event, context):
     if doc_number:
         reference_key = f"idcard/{doc_number}.jpg"
         live_key = frame_keys[len(frame_keys) // 2]
-
-        print(
-            f"🔍 FaceMatch: reference=s3://{bucket}/{reference_key}, "
-            f"live=s3://{bucket}/{live_key}"
-        )
-
         face_match_info = compare_face_reference(
             bucket=bucket,
             reference_key=reference_key,
@@ -112,8 +118,11 @@ def handler(event, context):
         },
     }
 
-    print("📤 Respuesta liveness-engine:", json.dumps(response))
-    return {
-        "statusCode": 200,
-        "body": json.dumps(response),
-    }
+    print(
+        f"📤 OUT: passed={response['passed']}, "
+        f"score={response['livenessScore']:.2f}, "
+        f"engine={engine_name}, "
+        f"faceMatch={face_match_info.get('match')}"
+    )
+
+    return {"statusCode": 200, "body": json.dumps(response)}
